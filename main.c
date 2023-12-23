@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 typedef uint64_t u64;
@@ -78,8 +79,10 @@ typedef int8_t i8;
   (void)rs2;
 
 #define TODO_FUNC(_instruction_name)                                           \
-  void inst_##_instruction_name(struct CPU *cpu, u32 inst) {                   \
+  void inst_##_instruction_name(struct CPU *cpu, struct Memory *mem,           \
+                                u32 inst) {                                    \
     (void)cpu;                                                                 \
+    (void)mem;                                                                 \
     (void)inst;                                                                \
     printf("Uninmplemented instruction: %s\n", #_instruction_name);            \
     assert(0);                                                                 \
@@ -93,7 +96,57 @@ i32 sign_extend(u32 n, u8 len) {
   return (i32)n;
 }
 
-u8 *ram;
+struct Memory {
+  u8 *ram;
+  u64 size;
+};
+
+#define U64_OVERFLOW_CHECK(_a, _b, _exp)                                       \
+  {                                                                            \
+    if ((_a) > UINT64_MAX - (_b)) {                                            \
+      _exp;                                                                    \
+    }                                                                          \
+  }
+// Bounds checked memory write for instructions to use.
+void memory_write(struct Memory *mem, u64 destination, void *buffer,
+                  u64 length) {
+  U64_OVERFLOW_CHECK(destination, (u64)mem->ram, goto write_fail);
+  U64_OVERFLOW_CHECK(length, (u64)mem->ram, goto write_fail);
+  U64_OVERFLOW_CHECK(destination, length, goto write_fail);
+
+  if (destination + length >= mem->size) {
+    goto write_fail;
+  }
+  memcpy(mem->ram + destination, buffer, length);
+  return;
+write_fail:
+#ifdef DEBUG
+  assert(0);
+#else
+  return;
+#endif
+}
+
+// Bounds checked memory read for instructions to use.
+void memory_read(struct Memory *mem, u64 source, void *buffer, u64 length) {
+  U64_OVERFLOW_CHECK(source, (u64)mem->ram, goto read_fail);
+  U64_OVERFLOW_CHECK(length, (u64)mem->ram, goto read_fail);
+  U64_OVERFLOW_CHECK(source, length, goto read_fail);
+
+  if (source + length >= mem->size) {
+    goto read_fail;
+  }
+  memcpy(buffer, mem->ram + source, length);
+  return;
+read_fail:
+  memset(buffer, 0, length);
+#ifdef DEBUG
+  assert(0);
+#else
+  return;
+#endif
+}
+
 struct CPU {
   u64 registers[32];
   u64 pc;
@@ -101,7 +154,8 @@ struct CPU {
 
 TODO_FUNC(slli)
 
-void inst_addi(struct CPU *cpu, u32 inst) {
+void inst_addi(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
   I_TYPE_DEF
   i32 b = sign_extend(imm, 11);
   cpu->registers[rd] = cpu->registers[rs1] + b;
@@ -110,7 +164,8 @@ void inst_addi(struct CPU *cpu, u32 inst) {
 #endif
 }
 
-void inst_slti(struct CPU *cpu, u32 inst) {
+void inst_slti(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
   I_TYPE_DEF
   if ((i64)cpu->registers[rs1] < imm) {
     cpu->registers[rd] = 1;
@@ -119,7 +174,8 @@ void inst_slti(struct CPU *cpu, u32 inst) {
   }
 }
 
-void inst_sltiu(struct CPU *cpu, u32 inst) {
+void inst_sltiu(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
   I_TYPE_DEF
   if ((u64)cpu->registers[rs1] < (u64)imm) {
     cpu->registers[rd] = 1;
@@ -128,27 +184,31 @@ void inst_sltiu(struct CPU *cpu, u32 inst) {
   }
 }
 
-void inst_andi(struct CPU *cpu, u32 inst) {
+void inst_andi(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
   I_TYPE_DEF
   i64 result = (i64)cpu->registers[rs1] & (i64)imm;
   cpu->registers[rd] = result;
 }
 
-void inst_ori(struct CPU *cpu, u32 inst) {
+void inst_ori(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
   I_TYPE_DEF
   i32 b = sign_extend(imm, 11);
   i64 result = cpu->registers[rs1] | b;
   cpu->registers[rd] = result;
 }
 
-void inst_xori(struct CPU *cpu, u32 inst) {
+void inst_xori(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
   I_TYPE_DEF
   i32 b = sign_extend(imm, 11);
   i64 result = cpu->registers[rs1] ^ b;
   cpu->registers[rd] = result;
 }
 
-void inst_srli(struct CPU *cpu, u32 inst) {
+void inst_srli(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
   I_TYPE_DEF
   u64 to_be_shifted = cpu->registers[rs1];
   i64 shift_amount = imm & 0x1F;
@@ -158,7 +218,8 @@ void inst_srli(struct CPU *cpu, u32 inst) {
   cpu->registers[rd] = result;
 }
 
-void inst_srai(struct CPU *cpu, u32 inst) {
+void inst_srai(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
   I_TYPE_DEF
   i64 to_be_shifted = cpu->registers[rs1];
   i64 shift_amount = imm & 0x1F;
@@ -168,7 +229,8 @@ void inst_srai(struct CPU *cpu, u32 inst) {
   cpu->registers[rd] = result;
 }
 
-void inst_add(struct CPU *cpu, u32 inst) {
+void inst_add(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
   R_TYPE_DEF
   cpu->registers[rd] = cpu->registers[rs1] + cpu->registers[rs2];
 }
@@ -201,38 +263,38 @@ void cpu_dump_state(struct CPU *cpu) {
 #define FUNCT3_ORI 0x6
 #define FUNCT3_ANDI 0x7
 
-void opcode_h13(struct CPU *cpu, u32 inst) {
+void opcode_h13(struct CPU *cpu, struct Memory *mem, u32 inst) {
   u8 funct3 = (inst >> 12) & 0x7;
   u8 funct7 = (inst >> 25) & 0x3F; // Only used for certain funct3
   switch (funct3) {
   case FUNCT3_ADDI:
-    inst_addi(cpu, inst);
+    inst_addi(cpu, mem, inst);
     break;
   case FUNCT3_SLTI:
-    inst_slti(cpu, inst);
+    inst_slti(cpu, mem, inst);
     break;
   case FUNCT3_SLTIU:
-    inst_sltiu(cpu, inst);
+    inst_sltiu(cpu, mem, inst);
     break;
   case FUNCT3_XORI:
-    inst_xori(cpu, inst);
+    inst_xori(cpu, mem, inst);
     break;
   case FUNCT3_ORI:
-    inst_ori(cpu, inst);
+    inst_ori(cpu, mem, inst);
     break;
   case FUNCT3_ANDI:
-    inst_andi(cpu, inst);
+    inst_andi(cpu, mem, inst);
     break;
   case FUNCT3_SLLI: {
     assert(0 == funct7);
-    inst_slli(cpu, inst);
+    inst_slli(cpu, mem, inst);
     break;
   }
   case FUNCT3_SR: {
     if (0 == funct7) {
-      inst_srli(cpu, inst);
+      inst_srli(cpu, mem, inst);
     } else {
-      inst_srai(cpu, inst);
+      inst_srai(cpu, mem, inst);
     }
     break;
   }
@@ -244,7 +306,8 @@ void opcode_h13(struct CPU *cpu, u32 inst) {
   }
 }
 
-void inst_lui(struct CPU *cpu, u32 inst) {
+void inst_lui(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
   U_TYPE_DEF
   cpu->registers[rd] = imm;
 #ifdef DEBUG
@@ -252,7 +315,8 @@ void inst_lui(struct CPU *cpu, u32 inst) {
 #endif
 }
 
-void inst_jalr(struct CPU *cpu, u32 inst) {
+void inst_jalr(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
   I_TYPE_DEF
   u64 target_address = cpu->registers[rs1] + sign_extend(imm, 12);
   target_address &= ~(1); // Setting the least significant bit to zero
@@ -265,11 +329,11 @@ void inst_jalr(struct CPU *cpu, u32 inst) {
 #endif
 }
 
-void opcode_h67(struct CPU *cpu, u32 inst) {
+void opcode_h67(struct CPU *cpu, struct Memory *mem, u32 inst) {
   I_TYPE_DEF
   switch (funct3) {
   case FUNCT3_JALR:
-    inst_jalr(cpu, inst);
+    inst_jalr(cpu, mem, inst);
     break;
   default:
     printf("Unknown funct3: %x in opcode: %x\n", funct3, inst & 0x7F);
@@ -279,58 +343,60 @@ void opcode_h67(struct CPU *cpu, u32 inst) {
   }
 }
 
-void inst_sb(struct CPU *cpu, u32 inst) {
+void inst_sb(struct CPU *cpu, struct Memory *mem, u32 inst) {
   S_TYPE_DEF
 
   i32 b = sign_extend(imm, 11);
   u64 destination = cpu->registers[rs1] + b;
-  *(u32 *)(ram + destination) = cpu->registers[rs2] & 0xFF;
+  u32 tmp_value = cpu->registers[rs2] & 0xFF;
+  memory_write(mem, destination, &tmp_value, sizeof(u32));
 }
 
-void inst_sh(struct CPU *cpu, u32 inst) {
+void inst_sh(struct CPU *cpu, struct Memory *mem, u32 inst) {
   S_TYPE_DEF
 
   i32 b = sign_extend(imm, 11);
   u64 destination = cpu->registers[rs1] + b;
-  *(u32 *)(ram + destination) = cpu->registers[rs2] & 0xFFFF;
+  u32 tmp_value = cpu->registers[rs2] & 0xFFFF;
+  memory_write(mem, destination, &tmp_value, sizeof(u32));
 }
 
-void inst_sw(struct CPU *cpu, u32 inst) {
+void inst_sw(struct CPU *cpu, struct Memory *mem, u32 inst) {
   S_TYPE_DEF
 
   i32 b = sign_extend(imm, 11);
   u64 destination = cpu->registers[rs1] + b;
-  *(u32 *)(ram + destination) = cpu->registers[rs2];
+  memory_write(mem, destination, &cpu->registers[rs2], sizeof(u32));
 #ifdef DEBUG
   printf("%lx: sw x%d,%d(x%d)\n", cpu->pc, rs2, b, rs1);
 #endif
 }
 
-void inst_sd(struct CPU *cpu, u32 inst) {
+void inst_sd(struct CPU *cpu, struct Memory *mem, u32 inst) {
   S_TYPE_DEF
 
   i32 b = sign_extend(imm, 11);
   u64 destination = cpu->registers[rs1] + b;
-  *(u64 *)(ram + destination) = cpu->registers[rs2];
+  memory_write(mem, destination, &cpu->registers[rs2], sizeof(u64));
 #ifdef DEBUG
   printf("%lx: sd x%d,%d(x%d)\n", cpu->pc, rs2, b, rs1);
 #endif
 }
 
-void opcode_h23(struct CPU *cpu, u32 inst) {
+void opcode_h23(struct CPU *cpu, struct Memory *mem, u32 inst) {
   S_TYPE_DEF
   switch (funct3) {
   case FUNCT3_SB:
-    inst_sb(cpu, inst);
+    inst_sb(cpu, mem, inst);
     break;
   case FUNCT3_SH:
-    inst_sh(cpu, inst);
+    inst_sh(cpu, mem, inst);
     break;
   case FUNCT3_SW:
-    inst_sw(cpu, inst);
+    inst_sw(cpu, mem, inst);
     break;
   case FUNCT3_SD:
-    inst_sd(cpu, inst);
+    inst_sd(cpu, mem, inst);
     break;
   default:
     printf("Unknown funct3: %x in opcode: %x\n", funct3, inst & 0x7F);
@@ -340,7 +406,8 @@ void opcode_h23(struct CPU *cpu, u32 inst) {
   }
 }
 
-void inst_jal(struct CPU *cpu, u32 inst) {
+void inst_jal(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
   J_TYPE_DEF
 
   i64 offset = sign_extend(imm, 20);
@@ -353,7 +420,8 @@ void inst_jal(struct CPU *cpu, u32 inst) {
 #endif
 }
 
-void inst_beq(struct CPU *cpu, u32 inst) {
+void inst_beq(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
   B_TYPE_DEF
   if (cpu->registers[rs1] != cpu->registers[rs2])
     return;
@@ -364,7 +432,8 @@ void inst_beq(struct CPU *cpu, u32 inst) {
   cpu->pc = jump_target_address;
 }
 
-void inst_bge(struct CPU *cpu, u32 inst) {
+void inst_bge(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
   B_TYPE_DEF
 
   i64 offset = sign_extend(imm, 12);
@@ -377,14 +446,14 @@ void inst_bge(struct CPU *cpu, u32 inst) {
 #endif
 }
 
-void opcode_h63(struct CPU *cpu, u32 inst) {
+void opcode_h63(struct CPU *cpu, struct Memory *mem, u32 inst) {
   B_TYPE_DEF
   switch (funct3) {
   case FUNCT3_BEQ:
-    inst_beq(cpu, inst);
+    inst_beq(cpu, mem, inst);
     break;
   case FUNCT3_BGE:
-    inst_bge(cpu, inst);
+    inst_bge(cpu, mem, inst);
     break;
   default:
     printf("Unknown funct3: %x in opcode: %x\n", funct3, inst & 0x7F);
@@ -394,36 +463,38 @@ void opcode_h63(struct CPU *cpu, u32 inst) {
   }
 }
 
-void inst_lw(struct CPU *cpu, u32 inst) {
+void inst_lw(struct CPU *cpu, struct Memory *mem, u32 inst) {
   I_TYPE_DEF
   i32 b = sign_extend(imm, 11);
   u64 location = cpu->registers[rs1] + b;
-  u32 value = *(u32 *)(ram + location);
+  u32 value;
+  memory_read(mem, location, &value, sizeof(u32));
   cpu->registers[rd] = value;
 #ifdef DEBUG
   printf("%lx: lw x%d, %d(x%d)\n", cpu->pc, rd, b, rs1);
 #endif
 }
 
-void inst_ld(struct CPU *cpu, u32 inst) {
+void inst_ld(struct CPU *cpu, struct Memory *mem, u32 inst) {
   I_TYPE_DEF
   i32 b = sign_extend(imm, 11);
   u64 location = cpu->registers[rs1] + b;
-  u64 value = *(u64 *)(ram + location);
+  u64 value;
+  memory_read(mem, location, &value, sizeof(u64));
   cpu->registers[rd] = value;
 #ifdef DEBUG
   printf("%lx: lw x%d, %d(x%d)\n", cpu->pc, rd, b, rs1);
 #endif
 }
 
-void opcode_h03(struct CPU *cpu, u32 inst) {
+void opcode_h03(struct CPU *cpu, struct Memory *mem, u32 inst) {
   I_TYPE_DEF
   switch (funct3) {
   case FUNCT3_LW:
-    inst_lw(cpu, inst);
+    inst_lw(cpu, mem, inst);
     break;
   case FUNCT3_LD:
-    inst_ld(cpu, inst);
+    inst_ld(cpu, mem, inst);
     break;
   default:
     printf("Unknown funct3: %x in opcode: %x\n", funct3, inst & 0x7F);
@@ -436,7 +507,8 @@ void opcode_h03(struct CPU *cpu, u32 inst) {
 #define FUNCT3_ADDW 0x0
 #define FUNCT7_ADDW 0x0
 
-void inst_addw(struct CPU *cpu, u32 inst) {
+void inst_addw(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
   R_TYPE_DEF
 
   i32 a = (i32)cpu->registers[rs1];
@@ -444,12 +516,12 @@ void inst_addw(struct CPU *cpu, u32 inst) {
   cpu->registers[rd] = a + b;
 }
 
-void opcode_h3B(struct CPU *cpu, u32 inst) {
+void opcode_h3B(struct CPU *cpu, struct Memory *mem, u32 inst) {
   R_TYPE_DEF
   switch (funct3) {
   case FUNCT3_ADDW:
     if (FUNCT7_ADDW == funct7) {
-      inst_addw(cpu, inst);
+      inst_addw(cpu, mem, inst);
     }
     break;
   default:
@@ -462,7 +534,8 @@ void opcode_h3B(struct CPU *cpu, u32 inst) {
 
 #define FUNCT3_ADDIW 0x0
 
-void inst_addiw(struct CPU *cpu, u32 inst) {
+void inst_addiw(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
   I_TYPE_DEF
 
   i32 a = (i32)cpu->registers[rs1];
@@ -470,11 +543,11 @@ void inst_addiw(struct CPU *cpu, u32 inst) {
   cpu->registers[rd] = a + b;
 }
 
-void opcode_h1B(struct CPU *cpu, u32 inst) {
+void opcode_h1B(struct CPU *cpu, struct Memory *mem, u32 inst) {
   R_TYPE_DEF
   switch (funct3) {
   case FUNCT3_ADDIW:
-    inst_addiw(cpu, inst);
+    inst_addiw(cpu, mem, inst);
     break;
   default:
     printf("Unknown funct3: %x in opcode: %x\n", funct3, inst & 0x7F);
@@ -484,38 +557,38 @@ void opcode_h1B(struct CPU *cpu, u32 inst) {
   }
 }
 
-void perform_instruction(struct CPU *cpu, u32 inst) {
+void perform_instruction(struct CPU *cpu, struct Memory *mem, u32 inst) {
   u8 opcode = inst & 0x7F;
   switch (opcode) {
   case 0x3:
-    opcode_h03(cpu, inst);
+    opcode_h03(cpu, mem, inst);
     break;
   case 0x13:
-    opcode_h13(cpu, inst);
+    opcode_h13(cpu, mem, inst);
     break;
   case 0x1B:
-    opcode_h1B(cpu, inst);
+    opcode_h1B(cpu, mem, inst);
     break;
   case 0x23:
-    opcode_h23(cpu, inst);
+    opcode_h23(cpu, mem, inst);
     break;
   case 0x33:
-    inst_add(cpu, inst);
+    inst_add(cpu, mem, inst);
     break;
   case 0x37:
-    inst_lui(cpu, inst);
+    inst_lui(cpu, mem, inst);
     break;
   case 0x3B:
-    opcode_h3B(cpu, inst);
+    opcode_h3B(cpu, mem, inst);
     break;
   case 0x63:
-    opcode_h63(cpu, inst);
+    opcode_h63(cpu, mem, inst);
     break;
   case 0x67:
-    opcode_h67(cpu, inst);
+    opcode_h67(cpu, mem, inst);
     break;
   case 0x6F:
-    inst_jal(cpu, inst);
+    inst_jal(cpu, mem, inst);
     break;
   default:
     printf("Unknown opcode: %x\n", opcode);
@@ -525,25 +598,26 @@ void perform_instruction(struct CPU *cpu, u32 inst) {
   }
 }
 
-void cpu_loop(struct CPU *cpu) {
+void cpu_loop(struct CPU *cpu, struct Memory *mem) {
   for (;;) {
-    u32 inst = *(u32 *)(ram + cpu->pc);
+    u32 inst;
+    memory_read(mem, cpu->pc, &inst, sizeof(u32));
     u64 old_pc = cpu->pc;
     cpu->registers[0] = 0;
-    perform_instruction(cpu, inst);
+    perform_instruction(cpu, mem, inst);
     if (cpu->pc != old_pc)
       continue;
     cpu->pc += sizeof(u32);
   }
 }
 
-bool load_file(const char *file) {
+bool load_file(const char *file, struct Memory *mem) {
   int fd = open(file, O_RDONLY);
   if (-1 == fd) {
     perror("open");
     return false;
   }
-  int rc = read(fd, ram, 4096);
+  int rc = read(fd, mem->ram, 4096);
   if (-1 == rc) {
     perror("read");
     return false;
@@ -557,17 +631,19 @@ bool load_file(const char *file) {
 
 int main(void) {
   struct CPU cpu;
+  struct Memory mem;
   cpu.pc = 0;
-  ram = calloc(100, 4096);
+  mem.ram = malloc(40960);
+  mem.size = 40960;
   for (int i = 0; i < 32; i++) {
     cpu.registers[i] = 0;
   }
   cpu.pc = 0xa4;
 
-  if (!load_file("./fib-example/flat")) {
+  if (!load_file("./fib-example/flat", &mem)) {
     return 1;
   }
 
-  cpu_loop(&cpu);
+  cpu_loop(&cpu, &mem);
   return 0;
 }
