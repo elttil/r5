@@ -4,8 +4,8 @@ CFLAGS=-std=c99 -g -Wall -Wextra -pedantic -Werror -lubsan -lasan -DDEBUG
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-emu: $(OBJ)
+r5: $(OBJ)
 	$(CC) $(LDFLAGS) $^ -o $@ -lubsan -lasan
 
 clean:
-	rm emu $(OBJ)
+	rm r5 $(OBJ)
