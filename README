@@ -1,0 +1,3 @@
+WIP RiscV emulator that can currently run some basic programs such as
+generating the Fibonacci sequence. End goal is to be sufficently complete that
+it can run Linux or other modern operating systems.
