@@ -78,16 +78,6 @@ typedef int8_t i8;
   (void)rs1;                                                                   \
   (void)rs2;
 
-#define TODO_FUNC(_instruction_name)                                           \
-  void inst_##_instruction_name(struct CPU *cpu, struct Memory *mem,           \
-                                u32 inst) {                                    \
-    (void)cpu;                                                                 \
-    (void)mem;                                                                 \
-    (void)inst;                                                                \
-    printf("Uninmplemented instruction: %s\n", #_instruction_name);            \
-    assert(0);                                                                 \
-  }
-
 i32 sign_extend(u32 n, u8 len) {
   n &= ~(0xFFFFFFFF << (len + 1));
   if (n & (1 << len)) {
@@ -96,63 +86,21 @@ i32 sign_extend(u32 n, u8 len) {
   return (i32)n;
 }
 
-struct Memory {
-  u8 *ram;
-  u64 size;
-};
-
-#define U64_OVERFLOW_CHECK(_a, _b, _exp)                                       \
-  {                                                                            \
-    if ((_a) > UINT64_MAX - (_b)) {                                            \
-      _exp;                                                                    \
-    }                                                                          \
-  }
-// Bounds checked memory write for instructions to use.
-void memory_write(struct Memory *mem, u64 destination, void *buffer,
-                  u64 length) {
-  U64_OVERFLOW_CHECK(destination, (u64)mem->ram, goto write_fail);
-  U64_OVERFLOW_CHECK(length, (u64)mem->ram, goto write_fail);
-  U64_OVERFLOW_CHECK(destination, length, goto write_fail);
-
-  if (destination + length >= mem->size) {
-    goto write_fail;
-  }
-  memcpy(mem->ram + destination, buffer, length);
-  return;
-write_fail:
-#ifdef DEBUG
-  assert(0);
-#else
-  return;
-#endif
-}
-
-// Bounds checked memory read for instructions to use.
-void memory_read(struct Memory *mem, u64 source, void *buffer, u64 length) {
-  U64_OVERFLOW_CHECK(source, (u64)mem->ram, goto read_fail);
-  U64_OVERFLOW_CHECK(length, (u64)mem->ram, goto read_fail);
-  U64_OVERFLOW_CHECK(source, length, goto read_fail);
-
-  if (source + length >= mem->size) {
-    goto read_fail;
-  }
-  memcpy(buffer, mem->ram + source, length);
-  return;
-read_fail:
-  memset(buffer, 0, length);
-#ifdef DEBUG
-  assert(0);
-#else
-  return;
-#endif
-}
-
 struct CPU {
   u64 registers[32];
   u64 pc;
 };
 
-TODO_FUNC(slli)
+void inst_slli(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
+  I_TYPE_DEF
+  u64 to_shift = cpu->registers[rs1];
+  u8 shift_amount = imm & 0x1F;
+  cpu->registers[rd] = to_shift << shift_amount;
+#ifdef DEBUG
+  printf("%lx: slli x%d,x%d,%d\n", cpu->pc, rd, rs1, shift_amount);
+#endif
+}
 
 void inst_addi(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
