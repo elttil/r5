@@ -1,4 +1,4 @@
-OBJ=main.o
+OBJ=main.o mmu.o
 CFLAGS=-std=c99 -g -Wall -Wextra -pedantic -Werror -lubsan -lasan -DDEBUG
 
 %.o: %.c
