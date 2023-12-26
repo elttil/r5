@@ -128,7 +128,7 @@ void inst_sltiu(struct CPU *cpu, struct Memory *mem, u32 inst) {
 void inst_andi(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   I_TYPE_DEF
-  i64 result = (i64)cpu->registers[rs1] & (i64)imm;
+  u64 result = cpu->registers[rs1] & (i64)imm;
   cpu->registers[rd] = result;
 }
 
@@ -153,8 +153,6 @@ void inst_srli(struct CPU *cpu, struct Memory *mem, u32 inst) {
   I_TYPE_DEF
   u64 to_be_shifted = cpu->registers[rs1];
   i64 shift_amount = imm & 0x1F;
-  i64 right_shift_type = inst & (1 << 30);
-  (void)right_shift_type; // FIXME
   u64 result = (u64)to_be_shifted >> shift_amount;
   cpu->registers[rd] = result;
 }
@@ -164,8 +162,6 @@ void inst_srai(struct CPU *cpu, struct Memory *mem, u32 inst) {
   I_TYPE_DEF
   i64 to_be_shifted = cpu->registers[rs1];
   i64 shift_amount = imm & 0x1F;
-  i64 right_shift_type = inst & (1 << 30);
-  (void)right_shift_type; // FIXME
   i64 result = to_be_shifted >> shift_amount;
   cpu->registers[rd] = result;
 }
@@ -173,7 +169,38 @@ void inst_srai(struct CPU *cpu, struct Memory *mem, u32 inst) {
 void inst_add(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   R_TYPE_DEF
-  cpu->registers[rd] = cpu->registers[rs1] + cpu->registers[rs2];
+  cpu->registers[rd] = (i64)cpu->registers[rs1] + (i64)cpu->registers[rs2];
+}
+
+void inst_sltu(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
+  R_TYPE_DEF
+  if (cpu->registers[rs1] < cpu->registers[rs2]) {
+    cpu->registers[rd] = 1;
+  } else {
+    cpu->registers[rd] = 0;
+  }
+}
+
+void inst_and(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
+  R_TYPE_DEF
+  i64 result = (i64)cpu->registers[rs1] & (i64)cpu->registers[rs2];
+  cpu->registers[rd] = result;
+}
+
+void inst_or(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
+  R_TYPE_DEF
+  i64 result = (i64)cpu->registers[rs1] | (i64)cpu->registers[rs2];
+  cpu->registers[rd] = result;
+}
+
+void inst_xor(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
+  R_TYPE_DEF
+  i64 result = (i64)cpu->registers[rs1] ^ (i64)cpu->registers[rs2];
+  cpu->registers[rd] = result;
 }
 
 void cpu_dump_state(struct CPU *cpu) {
@@ -195,6 +222,8 @@ void cpu_dump_state(struct CPU *cpu) {
 #define FUNCT3_BEQ 0x0
 #define FUNCT3_BNE 0x1
 #define FUNCT3_BGE 0x5
+#define FUNCT3_BLTU 0x6
+#define FUNCT3_BGEU 0x7
 
 #define FUNCT3_JALR 0x0
 #define FUNCT3_ADDI 0x0
@@ -205,6 +234,15 @@ void cpu_dump_state(struct CPU *cpu) {
 #define FUNCT3_SR 0x5
 #define FUNCT3_ORI 0x6
 #define FUNCT3_ANDI 0x7
+
+#define FUNCT3_SLLIW 0x1
+#define FUNCT3_SRW 0x5
+
+#define FUNCT3_ADD 0x0
+#define FUNCT3_SLTU 0x3
+#define FUNCT3_AND 0x7
+#define FUNCT3_OR 0x6
+#define FUNCT3_XOR 0x4
 
 void opcode_h13(struct CPU *cpu, struct Memory *mem, u32 inst) {
   u8 funct3 = (inst >> 12) & 0x7;
@@ -393,6 +431,21 @@ void inst_bge(struct CPU *cpu, struct Memory *mem, u32 inst) {
   }
 }
 
+void inst_bgeu(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
+  B_TYPE_DEF
+
+  i64 offset = sign_extend(imm, 12);
+  u64 jump_target_address = cpu->pc + offset;
+#ifdef DEBUG
+  printf("%lx: bge x%d,x%d,%lx\n", cpu->pc, rs1, rs2, jump_target_address);
+#endif
+  if (cpu->registers[rs1] >= cpu->registers[rs2]) {
+    cpu->pc = jump_target_address;
+    cpu->did_branch = true;
+  }
+}
+
 void inst_bne(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   B_TYPE_DEF
@@ -403,6 +456,21 @@ void inst_bne(struct CPU *cpu, struct Memory *mem, u32 inst) {
   printf("%lx: bne x%d,x%d,%lx\n", cpu->pc, rs1, rs2, jump_target_address);
 #endif
   if ((i64)cpu->registers[rs1] != (i64)cpu->registers[rs2]) {
+    cpu->pc = jump_target_address;
+    cpu->did_branch = true;
+  }
+}
+
+void inst_bltu(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
+  B_TYPE_DEF
+
+  i64 offset = sign_extend(imm, 12);
+  u64 jump_target_address = cpu->pc + offset;
+#ifdef DEBUG
+  printf("%lx: bltu x%d,x%d,%lx\n", cpu->pc, rs1, rs2, jump_target_address);
+#endif
+  if (cpu->registers[rs1] < cpu->registers[rs2]) {
     cpu->pc = jump_target_address;
     cpu->did_branch = true;
   }
@@ -420,6 +488,12 @@ void opcode_h63(struct CPU *cpu, struct Memory *mem, u32 inst) {
   case FUNCT3_BGE:
     inst_bge(cpu, mem, inst);
     break;
+  case FUNCT3_BLTU:
+    inst_bltu(cpu, mem, inst);
+    break;
+  case FUNCT3_BGEU:
+    inst_bgeu(cpu, mem, inst);
+    break;
   default:
     printf("Unknown funct3: %x in opcode: %x\n", funct3, inst & 0x7F);
     cpu_dump_state(cpu);
@@ -432,8 +506,8 @@ void inst_lw(struct CPU *cpu, struct Memory *mem, u32 inst) {
   I_TYPE_DEF
   i32 b = sign_extend(imm, 11);
   u64 location = cpu->registers[rs1] + b;
-  u32 value;
-  memory_read(mem, location, &value, sizeof(u32));
+  i32 value;
+  memory_read(mem, location, &value, sizeof(i32));
   cpu->registers[rd] = value;
 #ifdef DEBUG
   printf("%lx: lw x%d, %d(x%d)\n", cpu->pc, rd, b, rs1);
@@ -444,8 +518,8 @@ void inst_ld(struct CPU *cpu, struct Memory *mem, u32 inst) {
   I_TYPE_DEF
   i32 b = sign_extend(imm, 11);
   u64 location = cpu->registers[rs1] + b;
-  u64 value;
-  memory_read(mem, location, &value, sizeof(u64));
+  i64 value;
+  memory_read(mem, location, &value, sizeof(i64));
   cpu->registers[rd] = value;
 #ifdef DEBUG
   printf("%lx: ld x%d, %d(x%d)\n", cpu->pc, rd, b, rs1);
@@ -485,7 +559,12 @@ void opcode_h03(struct CPU *cpu, struct Memory *mem, u32 inst) {
 }
 
 #define FUNCT3_ADDW 0x0
+#define FUNCT3_SLLW 0x1
+
+#define FUNCT3_SRLW_SRAW 0x5
+
 #define FUNCT7_ADDW 0x0
+#define FUNCT7_SUBW (0x1 << 5)
 
 void inst_addw(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
@@ -496,12 +575,69 @@ void inst_addw(struct CPU *cpu, struct Memory *mem, u32 inst) {
   cpu->registers[rd] = a + b;
 }
 
+void inst_subw(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
+  R_TYPE_DEF
+
+  i32 a = (i32)cpu->registers[rs1];
+  i32 b = (i32)cpu->registers[rs2];
+  cpu->registers[rd] = a - b;
+}
+
+void inst_sllw(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
+  R_TYPE_DEF
+
+  i32 to_shift = cpu->registers[rs1];
+  u8 shift_amount = cpu->registers[rs2];
+  i32 result = to_shift << shift_amount;
+  cpu->registers[rd] &= ~(0xFFFFFFFF);
+  cpu->registers[rd] |= result & 0xFFFFFFFF;
+}
+
+void inst_srlw(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
+  R_TYPE_DEF
+  i32 to_be_shifted = cpu->registers[rs1] & 0xFFFFFFFF;
+  u8 shift_amount = cpu->registers[rs2];
+  i32 result = (i32)to_be_shifted >> shift_amount;
+  cpu->registers[rd] = result;
+}
+
+void inst_sraw(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
+  R_TYPE_DEF
+  i32 to_be_shifted = cpu->registers[rs1] & 0xFFFFFFFF;
+  u8 shift_amount = cpu->registers[rs2];
+  i32 result = to_be_shifted >> shift_amount;
+  cpu->registers[rd] &= ~(0xFFFFFFFF);
+  cpu->registers[rd] |= result & 0xFFFFFFFF;
+}
+
 void opcode_h3B(struct CPU *cpu, struct Memory *mem, u32 inst) {
   R_TYPE_DEF
   switch (funct3) {
+  case FUNCT3_SLLW:
+    if (0 == funct7) {
+      inst_sllw(cpu, mem, inst);
+    }
+    break;
   case FUNCT3_ADDW:
     if (FUNCT7_ADDW == funct7) {
       inst_addw(cpu, mem, inst);
+    } else if (FUNCT7_SUBW == funct7) {
+      inst_subw(cpu, mem, inst);
+    } else {
+      assert(0);
+    }
+    break;
+  case FUNCT3_SRLW_SRAW:
+    if (0 == funct7) {
+      inst_srlw(cpu, mem, inst);
+    }
+    break;
+    if ((1 << 5) == funct7) {
+      inst_sraw(cpu, mem, inst);
     }
     break;
   default:
@@ -523,11 +659,102 @@ void inst_addiw(struct CPU *cpu, struct Memory *mem, u32 inst) {
   cpu->registers[rd] = a + b;
 }
 
+void inst_srliw(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
+  I_TYPE_DEF
+  i32 to_be_shifted = cpu->registers[rs1] & 0xFFFFFFFF;
+  u8 shift_amount = imm & 0x1F;
+  i32 result = (i32)to_be_shifted >> shift_amount;
+  cpu->registers[rd] = result;
+}
+
+void inst_sraiw(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
+  I_TYPE_DEF
+  i32 to_be_shifted = cpu->registers[rs1] & 0xFFFFFFFF;
+  u8 shift_amount = imm & 0x1F;
+  i32 result = to_be_shifted >> shift_amount;
+  cpu->registers[rd] &= ~(0xFFFFFFFF);
+  cpu->registers[rd] |= result & 0xFFFFFFFF;
+}
+
+void inst_slliw(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
+  I_TYPE_DEF
+  i32 to_shift = cpu->registers[rs1];
+  u8 shift_amount = imm & 0x1F;
+  i32 result = to_shift << shift_amount;
+  cpu->registers[rd] &= ~(0xFFFFFFFF);
+  cpu->registers[rd] |= result & 0xFFFFFFFF;
+#ifdef DEBUG
+  printf("%lx: slli x%d,x%d,%d\n", cpu->pc, rd, rs1, shift_amount);
+#endif
+}
+
 void opcode_h1B(struct CPU *cpu, struct Memory *mem, u32 inst) {
-  R_TYPE_DEF
+  u8 funct3 = (inst >> 12) & 0x7;
+  u8 funct7 = (inst >> 25) & 0x3F; // Only used for certain funct3
   switch (funct3) {
   case FUNCT3_ADDIW:
     inst_addiw(cpu, mem, inst);
+    break;
+  case FUNCT3_SLLIW:
+    inst_slliw(cpu, mem, inst);
+    break;
+  case FUNCT3_SRW: {
+    if (0 == funct7) {
+      inst_srliw(cpu, mem, inst);
+    } else {
+      inst_sraiw(cpu, mem, inst);
+    }
+    break;
+  }
+  default:
+    printf("Unknown funct3: %x in opcode: %x\n", funct3, inst & 0x7F);
+    cpu_dump_state(cpu);
+    assert(0);
+    break;
+  }
+}
+
+void opcode_h33(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  u8 funct3 = (inst >> 12) & 0x7;
+  u8 funct7 = (inst >> 25) & 0x3F; // Only used for certain funct3
+  switch (funct3) {
+  case FUNCT3_ADD:
+    if (0 == funct7) {
+      inst_add(cpu, mem, inst);
+    } else {
+      assert(0);
+    }
+    break;
+  case FUNCT3_SLTU:
+    if (0 == funct7) {
+      inst_sltu(cpu, mem, inst);
+    } else {
+      assert(0);
+    }
+    break;
+  case FUNCT3_XOR:
+    if (0 == funct7) {
+      inst_xor(cpu, mem, inst);
+    } else {
+      assert(0);
+    }
+    break;
+  case FUNCT3_AND:
+    if (0 == funct7) {
+      inst_sltu(cpu, mem, inst);
+    } else {
+      assert(0);
+    }
+    break;
+  case FUNCT3_OR:
+    if (0 == funct7) {
+      inst_or(cpu, mem, inst);
+    } else {
+      assert(0);
+    }
     break;
   default:
     printf("Unknown funct3: %x in opcode: %x\n", funct3, inst & 0x7F);
@@ -554,7 +781,7 @@ void perform_instruction(struct CPU *cpu, struct Memory *mem, u32 inst) {
     opcode_h23(cpu, mem, inst);
     break;
   case 0x33:
-    inst_add(cpu, mem, inst);
+    opcode_h33(cpu, mem, inst);
     break;
   case 0x37:
     inst_lui(cpu, mem, inst);
@@ -597,7 +824,7 @@ bool load_file(const char *file, struct Memory *mem, u64 offset) {
     perror("open");
     return false;
   }
-  int rc = read(fd, mem->ram + offset, 4096);
+  int rc = read(fd, mem->ram + offset, 8192);
   if (-1 == rc) {
     perror("read");
     return false;
@@ -618,7 +845,7 @@ int main(void) {
   for (int i = 0; i < 32; i++) {
     cpu.registers[i] = 0;
   }
-  cpu.pc = 0x10a8;
+  cpu.pc = 0x1000;
 
   if (!load_file("./fib-example/flat", &mem, 0x1000)) {
     return 1;
