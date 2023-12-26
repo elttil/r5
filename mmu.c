@@ -5,7 +5,9 @@
 // Paging will also be handeled in this file when/if that gets implemented
 #include "mmu.h"
 #include <assert.h>
+#include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #define U64_OVERFLOW_CHECK(_a, _b, _exp)                                       \
   {                                                                            \
@@ -13,12 +15,23 @@
       _exp;                                                                    \
     }                                                                          \
   }
+
+// UART
+#define Ns16650a_BASE 0x10000000
+
 // Bounds checked memory write for instructions to use.
 void memory_write(struct Memory *mem, u64 destination, void *buffer,
                   u64 length) {
+  U64_OVERFLOW_CHECK(destination, length, goto write_fail);
+
+  // TODO: Make this more general and not hardcoded
+  if (Ns16650a_BASE == destination) {
+    write(STDOUT_FILENO, buffer, 1);
+    return;
+  }
+
   U64_OVERFLOW_CHECK(destination, (u64)mem->ram, goto write_fail);
   U64_OVERFLOW_CHECK(length, (u64)mem->ram, goto write_fail);
-  U64_OVERFLOW_CHECK(destination, length, goto write_fail);
 
   if (destination + length >= mem->size) {
     goto write_fail;

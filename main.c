@@ -81,6 +81,7 @@ i32 sign_extend(u32 n, u8 len) {
 struct CPU {
   u64 registers[32];
   u64 pc;
+  bool did_branch;
 };
 
 void inst_slli(struct CPU *cpu, struct Memory *mem, u32 inst) {
@@ -189,8 +190,10 @@ void cpu_dump_state(struct CPU *cpu) {
 
 #define FUNCT3_LW 0x2
 #define FUNCT3_LD 0x3
+#define FUNCT3_LBU 0x4
 
 #define FUNCT3_BEQ 0x0
+#define FUNCT3_BNE 0x1
 #define FUNCT3_BGE 0x5
 
 #define FUNCT3_JALR 0x0
@@ -263,10 +266,11 @@ void inst_jalr(struct CPU *cpu, struct Memory *mem, u32 inst) {
 
   cpu->registers[rd] = cpu->pc + 4;
 
-  cpu->pc = target_address;
 #ifdef DEBUG
   printf("%lx: jalr x%d,%d(x%d)\n", cpu->pc, rd, imm, rs1);
 #endif
+  cpu->pc = target_address;
+  cpu->did_branch = true;
 }
 
 void opcode_h67(struct CPU *cpu, struct Memory *mem, u32 inst) {
@@ -354,10 +358,11 @@ void inst_jal(struct CPU *cpu, struct Memory *mem, u32 inst) {
 
   u64 jump_target_address = cpu->pc + offset;
   cpu->registers[rd] = cpu->pc + 4;
-  cpu->pc = jump_target_address;
 #ifdef DEBUG
   printf("%lx: jal x%d, %lx\n", cpu->pc, rd, jump_target_address);
 #endif
+  cpu->pc = jump_target_address;
+  cpu->did_branch = true;
 }
 
 void inst_beq(struct CPU *cpu, struct Memory *mem, u32 inst) {
@@ -370,6 +375,7 @@ void inst_beq(struct CPU *cpu, struct Memory *mem, u32 inst) {
 
   u64 jump_target_address = cpu->pc + offset;
   cpu->pc = jump_target_address;
+  cpu->did_branch = true;
 }
 
 void inst_bge(struct CPU *cpu, struct Memory *mem, u32 inst) {
@@ -378,17 +384,36 @@ void inst_bge(struct CPU *cpu, struct Memory *mem, u32 inst) {
 
   i64 offset = sign_extend(imm, 12);
   u64 jump_target_address = cpu->pc + offset;
-  if ((i64)cpu->registers[rs1] >= (i64)cpu->registers[rs2]) {
-    cpu->pc = jump_target_address;
-  }
 #ifdef DEBUG
   printf("%lx: bge x%d,x%d,%lx\n", cpu->pc, rs1, rs2, jump_target_address);
 #endif
+  if ((i64)cpu->registers[rs1] >= (i64)cpu->registers[rs2]) {
+    cpu->pc = jump_target_address;
+    cpu->did_branch = true;
+  }
+}
+
+void inst_bne(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
+  B_TYPE_DEF
+
+  i64 offset = sign_extend(imm, 12);
+  u64 jump_target_address = cpu->pc + offset;
+#ifdef DEBUG
+  printf("%lx: bne x%d,x%d,%lx\n", cpu->pc, rs1, rs2, jump_target_address);
+#endif
+  if ((i64)cpu->registers[rs1] != (i64)cpu->registers[rs2]) {
+    cpu->pc = jump_target_address;
+    cpu->did_branch = true;
+  }
 }
 
 void opcode_h63(struct CPU *cpu, struct Memory *mem, u32 inst) {
   B_TYPE_DEF
   switch (funct3) {
+  case FUNCT3_BNE:
+    inst_bne(cpu, mem, inst);
+    break;
   case FUNCT3_BEQ:
     inst_beq(cpu, mem, inst);
     break;
@@ -423,7 +448,19 @@ void inst_ld(struct CPU *cpu, struct Memory *mem, u32 inst) {
   memory_read(mem, location, &value, sizeof(u64));
   cpu->registers[rd] = value;
 #ifdef DEBUG
-  printf("%lx: lw x%d, %d(x%d)\n", cpu->pc, rd, b, rs1);
+  printf("%lx: ld x%d, %d(x%d)\n", cpu->pc, rd, b, rs1);
+#endif
+}
+
+void inst_lbu(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  I_TYPE_DEF
+  i32 b = sign_extend(imm, 11);
+  u64 location = cpu->registers[rs1] + b;
+  u8 value;
+  memory_read(mem, location, &value, sizeof(u8));
+  cpu->registers[rd] = value;
+#ifdef DEBUG
+  printf("%lx: lbu x%d, %d(x%d)\n", cpu->pc, rd, b, rs1);
 #endif
 }
 
@@ -435,6 +472,9 @@ void opcode_h03(struct CPU *cpu, struct Memory *mem, u32 inst) {
     break;
   case FUNCT3_LD:
     inst_ld(cpu, mem, inst);
+    break;
+  case FUNCT3_LBU:
+    inst_lbu(cpu, mem, inst);
     break;
   default:
     printf("Unknown funct3: %x in opcode: %x\n", funct3, inst & 0x7F);
@@ -498,6 +538,7 @@ void opcode_h1B(struct CPU *cpu, struct Memory *mem, u32 inst) {
 }
 
 void perform_instruction(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  cpu->did_branch = false;
   u8 opcode = inst & 0x7F;
   switch (opcode) {
   case 0x3:
@@ -542,22 +583,21 @@ void cpu_loop(struct CPU *cpu, struct Memory *mem) {
   for (;;) {
     u32 inst;
     memory_read(mem, cpu->pc, &inst, sizeof(u32));
-    u64 old_pc = cpu->pc;
     cpu->registers[0] = 0;
     perform_instruction(cpu, mem, inst);
-    if (cpu->pc != old_pc)
+    if (cpu->did_branch)
       continue;
     cpu->pc += sizeof(u32);
   }
 }
 
-bool load_file(const char *file, struct Memory *mem) {
+bool load_file(const char *file, struct Memory *mem, u64 offset) {
   int fd = open(file, O_RDONLY);
   if (-1 == fd) {
     perror("open");
     return false;
   }
-  int rc = read(fd, mem->ram, 4096);
+  int rc = read(fd, mem->ram + offset, 4096);
   if (-1 == rc) {
     perror("read");
     return false;
@@ -578,9 +618,9 @@ int main(void) {
   for (int i = 0; i < 32; i++) {
     cpu.registers[i] = 0;
   }
-  cpu.pc = 0xa4;
+  cpu.pc = 0x10a8;
 
-  if (!load_file("./fib-example/flat", &mem)) {
+  if (!load_file("./fib-example/flat", &mem, 0x1000)) {
     return 1;
   }
 
