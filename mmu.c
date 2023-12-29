@@ -6,6 +6,7 @@
 #include "mmu.h"
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -18,6 +19,16 @@
 
 // UART
 #define Ns16650a_BASE 0x10000000
+
+bool ram_init(struct Memory *mem, u64 size) {
+  mem->ram = malloc(size);
+  if (!mem->ram) {
+    perror("malloc");
+    return false;
+  }
+  mem->size = size;
+  return true;
+}
 
 // Bounds checked memory write for instructions to use.
 void memory_write(struct Memory *mem, u64 destination, void *buffer,
