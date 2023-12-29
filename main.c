@@ -84,38 +84,39 @@ struct CPU {
   bool did_branch;
 };
 
-void inst_slli(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_slli(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   I_TYPE_DEF
   u64 to_shift = cpu->registers[rs1];
-  u8 shift_amount = imm & 0x1F;
-  cpu->registers[rd] = to_shift << shift_amount;
+  u8 shift_amount = imm & 0x3F;
+  u64 result = to_shift << shift_amount;
+  cpu->registers[rd] = result;
 #ifdef DEBUG
   printf("%lx: slli x%d,x%d,%d\n", cpu->pc, rd, rs1, shift_amount);
 #endif
 }
 
-void inst_addi(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_addi(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   I_TYPE_DEF
   i32 b = sign_extend(imm, 11);
-  cpu->registers[rd] = cpu->registers[rs1] + b;
+  cpu->registers[rd] = (i64)cpu->registers[rs1] + b;
 #ifdef DEBUG
   printf("%lx: addi x%d,x%d,%d\n", cpu->pc, rd, rs1, b);
 #endif
 }
 
-void inst_slti(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_slti(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   I_TYPE_DEF
-  if ((i64)cpu->registers[rs1] < imm) {
+  if ((i64)cpu->registers[rs1] < (i64)sign_extend(imm, 11)) {
     cpu->registers[rd] = 1;
   } else {
     cpu->registers[rd] = 0;
   }
 }
 
-void inst_sltiu(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_sltiu(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   I_TYPE_DEF
   if ((u64)cpu->registers[rs1] < (u64)imm) {
@@ -125,54 +126,55 @@ void inst_sltiu(struct CPU *cpu, struct Memory *mem, u32 inst) {
   }
 }
 
-void inst_andi(struct CPU *cpu, struct Memory *mem, u32 inst) {
-  (void)mem;
-  I_TYPE_DEF
-  u64 result = cpu->registers[rs1] & (i64)imm;
-  cpu->registers[rd] = result;
-}
-
-void inst_ori(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_andi(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   I_TYPE_DEF
   i32 b = sign_extend(imm, 11);
-  i64 result = cpu->registers[rs1] | b;
+  u64 result = (i64)cpu->registers[rs1] & (i64)b;
   cpu->registers[rd] = result;
 }
 
-void inst_xori(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_ori(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   I_TYPE_DEF
   i32 b = sign_extend(imm, 11);
-  i64 result = cpu->registers[rs1] ^ b;
+  i64 result = (i64)cpu->registers[rs1] | b;
   cpu->registers[rd] = result;
 }
 
-void inst_srli(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_xori(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
+  I_TYPE_DEF
+  i32 b = sign_extend(imm, 11);
+  i64 result = (i64)cpu->registers[rs1] ^ (i64)b;
+  cpu->registers[rd] = result;
+}
+
+static void inst_srli(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   I_TYPE_DEF
   u64 to_be_shifted = cpu->registers[rs1];
-  i64 shift_amount = imm & 0x1F;
-  u64 result = (u64)to_be_shifted >> shift_amount;
+  u8 shift_amount = imm & 0x3F;
+  u64 result = to_be_shifted >> shift_amount;
   cpu->registers[rd] = result;
 }
 
-void inst_srai(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_srai(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   I_TYPE_DEF
   i64 to_be_shifted = cpu->registers[rs1];
-  i64 shift_amount = imm & 0x1F;
+  u8 shift_amount = imm & 0x3F;
   i64 result = to_be_shifted >> shift_amount;
   cpu->registers[rd] = result;
 }
 
-void inst_add(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_add(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   R_TYPE_DEF
-  cpu->registers[rd] = (i64)cpu->registers[rs1] + (i64)cpu->registers[rs2];
+  cpu->registers[rd] = cpu->registers[rs1] + cpu->registers[rs2];
 }
 
-void inst_sltu(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_sltu(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   R_TYPE_DEF
   if (cpu->registers[rs1] < cpu->registers[rs2]) {
@@ -182,25 +184,22 @@ void inst_sltu(struct CPU *cpu, struct Memory *mem, u32 inst) {
   }
 }
 
-void inst_and(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_and(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   R_TYPE_DEF
-  i64 result = (i64)cpu->registers[rs1] & (i64)cpu->registers[rs2];
-  cpu->registers[rd] = result;
+  cpu->registers[rd] = cpu->registers[rs1] & cpu->registers[rs2];
 }
 
-void inst_or(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_or(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   R_TYPE_DEF
-  i64 result = (i64)cpu->registers[rs1] | (i64)cpu->registers[rs2];
-  cpu->registers[rd] = result;
+  cpu->registers[rd] = cpu->registers[rs1] | cpu->registers[rs2];
 }
 
-void inst_xor(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_xor(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   R_TYPE_DEF
-  i64 result = (i64)cpu->registers[rs1] ^ (i64)cpu->registers[rs2];
-  cpu->registers[rd] = result;
+  cpu->registers[rd] = cpu->registers[rs1] ^ cpu->registers[rs2];
 }
 
 void cpu_dump_state(struct CPU *cpu) {
@@ -244,9 +243,10 @@ void cpu_dump_state(struct CPU *cpu) {
 #define FUNCT3_OR 0x6
 #define FUNCT3_XOR 0x4
 
-void opcode_h13(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void opcode_h13(struct CPU *cpu, struct Memory *mem, u32 inst) {
   u8 funct3 = (inst >> 12) & 0x7;
-  u8 funct7 = (inst >> 25) & 0x3F; // Only used for certain funct3
+  u8 funct7 = (inst >> 26 /* shamt is sligthly bigger for 64 bit */) &
+              0x3F; // Only used for certain funct3
   switch (funct3) {
   case FUNCT3_ADDI:
     inst_addi(cpu, mem, inst);
@@ -287,7 +287,7 @@ void opcode_h13(struct CPU *cpu, struct Memory *mem, u32 inst) {
   }
 }
 
-void inst_lui(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_lui(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   U_TYPE_DEF
   cpu->registers[rd] = imm;
@@ -296,7 +296,7 @@ void inst_lui(struct CPU *cpu, struct Memory *mem, u32 inst) {
 #endif
 }
 
-void inst_jalr(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_jalr(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   I_TYPE_DEF
   u64 target_address = cpu->registers[rs1] + sign_extend(imm, 12);
@@ -311,7 +311,7 @@ void inst_jalr(struct CPU *cpu, struct Memory *mem, u32 inst) {
   cpu->did_branch = true;
 }
 
-void opcode_h67(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void opcode_h67(struct CPU *cpu, struct Memory *mem, u32 inst) {
   I_TYPE_DEF
   switch (funct3) {
   case FUNCT3_JALR:
@@ -325,47 +325,49 @@ void opcode_h67(struct CPU *cpu, struct Memory *mem, u32 inst) {
   }
 }
 
-void inst_sb(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_sb(struct CPU *cpu, struct Memory *mem, u32 inst) {
   S_TYPE_DEF
 
   i32 b = sign_extend(imm, 11);
   u64 destination = cpu->registers[rs1] + b;
-  u32 tmp_value = cpu->registers[rs2] & 0xFF;
-  memory_write(mem, destination, &tmp_value, sizeof(u32));
+  u8 tmp_value = cpu->registers[rs2];
+  memory_write(mem, destination, &tmp_value, sizeof(tmp_value));
 }
 
-void inst_sh(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_sh(struct CPU *cpu, struct Memory *mem, u32 inst) {
   S_TYPE_DEF
 
   i32 b = sign_extend(imm, 11);
   u64 destination = cpu->registers[rs1] + b;
-  u32 tmp_value = cpu->registers[rs2] & 0xFFFF;
-  memory_write(mem, destination, &tmp_value, sizeof(u32));
+  u16 tmp_value = cpu->registers[rs2];
+  memory_write(mem, destination, &tmp_value, sizeof(tmp_value));
 }
 
-void inst_sw(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_sw(struct CPU *cpu, struct Memory *mem, u32 inst) {
   S_TYPE_DEF
 
   i32 b = sign_extend(imm, 11);
-  u64 destination = cpu->registers[rs1] + b;
-  memory_write(mem, destination, &cpu->registers[rs2], sizeof(u32));
+  u64 destination = cpu->registers[rs1] + (i64)b;
+  u32 value = cpu->registers[rs2];
+  memory_write(mem, destination, &value, sizeof(value));
 #ifdef DEBUG
   printf("%lx: sw x%d,%d(x%d)\n", cpu->pc, rs2, b, rs1);
 #endif
 }
 
-void inst_sd(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_sd(struct CPU *cpu, struct Memory *mem, u32 inst) {
   S_TYPE_DEF
 
   i32 b = sign_extend(imm, 11);
   u64 destination = cpu->registers[rs1] + b;
-  memory_write(mem, destination, &cpu->registers[rs2], sizeof(u64));
+  u64 value = cpu->registers[rs2];
+  memory_write(mem, destination, &value, sizeof(value));
 #ifdef DEBUG
   printf("%lx: sd x%d,%d(x%d)\n", cpu->pc, rs2, b, rs1);
 #endif
 }
 
-void opcode_h23(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void opcode_h23(struct CPU *cpu, struct Memory *mem, u32 inst) {
   S_TYPE_DEF
   switch (funct3) {
   case FUNCT3_SB:
@@ -388,7 +390,7 @@ void opcode_h23(struct CPU *cpu, struct Memory *mem, u32 inst) {
   }
 }
 
-void inst_jal(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_jal(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   J_TYPE_DEF
 
@@ -403,7 +405,7 @@ void inst_jal(struct CPU *cpu, struct Memory *mem, u32 inst) {
   cpu->did_branch = true;
 }
 
-void inst_beq(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_beq(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   B_TYPE_DEF
   if (cpu->registers[rs1] != cpu->registers[rs2])
@@ -416,7 +418,7 @@ void inst_beq(struct CPU *cpu, struct Memory *mem, u32 inst) {
   cpu->did_branch = true;
 }
 
-void inst_bge(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_bge(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   B_TYPE_DEF
 
@@ -431,7 +433,7 @@ void inst_bge(struct CPU *cpu, struct Memory *mem, u32 inst) {
   }
 }
 
-void inst_bgeu(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_bgeu(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   B_TYPE_DEF
 
@@ -446,7 +448,7 @@ void inst_bgeu(struct CPU *cpu, struct Memory *mem, u32 inst) {
   }
 }
 
-void inst_bne(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_bne(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   B_TYPE_DEF
 
@@ -461,7 +463,7 @@ void inst_bne(struct CPU *cpu, struct Memory *mem, u32 inst) {
   }
 }
 
-void inst_bltu(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_bltu(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   B_TYPE_DEF
 
@@ -476,7 +478,7 @@ void inst_bltu(struct CPU *cpu, struct Memory *mem, u32 inst) {
   }
 }
 
-void opcode_h63(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void opcode_h63(struct CPU *cpu, struct Memory *mem, u32 inst) {
   B_TYPE_DEF
   switch (funct3) {
   case FUNCT3_BNE:
@@ -502,19 +504,19 @@ void opcode_h63(struct CPU *cpu, struct Memory *mem, u32 inst) {
   }
 }
 
-void inst_lw(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_lw(struct CPU *cpu, struct Memory *mem, u32 inst) {
   I_TYPE_DEF
   i32 b = sign_extend(imm, 11);
-  u64 location = cpu->registers[rs1] + b;
+  u64 location = cpu->registers[rs1] + (i64)b;
   i32 value;
-  memory_read(mem, location, &value, sizeof(i32));
-  cpu->registers[rd] = value;
+  memory_read(mem, location, &value, sizeof(value));
+  cpu->registers[rd] = (i64)value;
 #ifdef DEBUG
   printf("%lx: lw x%d, %d(x%d)\n", cpu->pc, rd, b, rs1);
 #endif
 }
 
-void inst_ld(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_ld(struct CPU *cpu, struct Memory *mem, u32 inst) {
   I_TYPE_DEF
   i32 b = sign_extend(imm, 11);
   u64 location = cpu->registers[rs1] + b;
@@ -526,7 +528,7 @@ void inst_ld(struct CPU *cpu, struct Memory *mem, u32 inst) {
 #endif
 }
 
-void inst_lbu(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_lbu(struct CPU *cpu, struct Memory *mem, u32 inst) {
   I_TYPE_DEF
   i32 b = sign_extend(imm, 11);
   u64 location = cpu->registers[rs1] + b;
@@ -538,7 +540,7 @@ void inst_lbu(struct CPU *cpu, struct Memory *mem, u32 inst) {
 #endif
 }
 
-void opcode_h03(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void opcode_h03(struct CPU *cpu, struct Memory *mem, u32 inst) {
   I_TYPE_DEF
   switch (funct3) {
   case FUNCT3_LW:
@@ -566,55 +568,47 @@ void opcode_h03(struct CPU *cpu, struct Memory *mem, u32 inst) {
 #define FUNCT7_ADDW 0x0
 #define FUNCT7_SUBW (0x1 << 5)
 
-void inst_addw(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_addw(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   R_TYPE_DEF
-
-  i32 a = (i32)cpu->registers[rs1];
-  i32 b = (i32)cpu->registers[rs2];
-  cpu->registers[rd] = a + b;
+  cpu->registers[rd] = cpu->registers[rs1] + cpu->registers[rs2];
 }
 
-void inst_subw(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_subw(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   R_TYPE_DEF
-
-  i32 a = (i32)cpu->registers[rs1];
-  i32 b = (i32)cpu->registers[rs2];
-  cpu->registers[rd] = a - b;
+  cpu->registers[rd] = cpu->registers[rs1] - cpu->registers[rs2];
 }
 
-void inst_sllw(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_sllw(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   R_TYPE_DEF
 
-  i32 to_shift = cpu->registers[rs1];
-  u8 shift_amount = cpu->registers[rs2];
-  i32 result = to_shift << shift_amount;
-  cpu->registers[rd] &= ~(0xFFFFFFFF);
-  cpu->registers[rd] |= result & 0xFFFFFFFF;
+  u64 to_shift = cpu->registers[rs1];
+  u8 shift_amount = cpu->registers[rs2] & 0x1F;
+  i32 result = (to_shift << shift_amount);
+  cpu->registers[rd] = (i64)result;
 }
 
-void inst_srlw(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_srlw(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   R_TYPE_DEF
-  i32 to_be_shifted = cpu->registers[rs1] & 0xFFFFFFFF;
-  u8 shift_amount = cpu->registers[rs2];
-  i32 result = (i32)to_be_shifted >> shift_amount;
-  cpu->registers[rd] = result;
-}
-
-void inst_sraw(struct CPU *cpu, struct Memory *mem, u32 inst) {
-  (void)mem;
-  R_TYPE_DEF
-  i32 to_be_shifted = cpu->registers[rs1] & 0xFFFFFFFF;
-  u8 shift_amount = cpu->registers[rs2];
+  u32 to_be_shifted = cpu->registers[rs1];
+  u8 shift_amount = cpu->registers[rs2] & 0x1F;
   i32 result = to_be_shifted >> shift_amount;
-  cpu->registers[rd] &= ~(0xFFFFFFFF);
-  cpu->registers[rd] |= result & 0xFFFFFFFF;
+  cpu->registers[rd] = (i64)result;
 }
 
-void opcode_h3B(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_sraw(struct CPU *cpu, struct Memory *mem, u32 inst) {
+  (void)mem;
+  R_TYPE_DEF
+  i32 to_be_shifted = cpu->registers[rs1];
+  u8 shift_amount = cpu->registers[rs2] & 0x1F;
+  i32 result = to_be_shifted >> shift_amount;
+  cpu->registers[rd] = (i64)result;
+}
+
+static void opcode_h3B(struct CPU *cpu, struct Memory *mem, u32 inst) {
   R_TYPE_DEF
   switch (funct3) {
   case FUNCT3_SLLW:
@@ -650,48 +644,56 @@ void opcode_h3B(struct CPU *cpu, struct Memory *mem, u32 inst) {
 
 #define FUNCT3_ADDIW 0x0
 
-void inst_addiw(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_addiw(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   I_TYPE_DEF
 
-  i32 a = (i32)cpu->registers[rs1];
-  i32 b = sign_extend(imm, 11);
+  i64 a = cpu->registers[rs1];
+  i64 b = sign_extend(imm, 11);
   cpu->registers[rd] = a + b;
 }
 
-void inst_srliw(struct CPU *cpu, struct Memory *mem, u32 inst) {
+uint64_t kUpper32bitMask = 0xFFFFFFFF00000000;
+u64 Sext32bit(u64 data32bit) {
+  if ((data32bit >> 31) & 1) {
+    return data32bit | kUpper32bitMask;
+  } else {
+    return data32bit & (~kUpper32bitMask);
+  }
+}
+
+static void inst_srliw(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   I_TYPE_DEF
-  i32 to_be_shifted = cpu->registers[rs1] & 0xFFFFFFFF;
-  u8 shift_amount = imm & 0x1F;
-  i32 result = (i32)to_be_shifted >> shift_amount;
+  u64 to_be_shifted = cpu->registers[rs1] & 0xFFFFFFFF;
+  u8 shift_amount = imm & 0x3F;
+  u64 result = to_be_shifted >> shift_amount;
+  result = Sext32bit(result);
   cpu->registers[rd] = result;
 }
 
-void inst_sraiw(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_sraiw(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   I_TYPE_DEF
-  i32 to_be_shifted = cpu->registers[rs1] & 0xFFFFFFFF;
+  i64 to_be_shifted = (i64)cpu->registers[rs1];
   u8 shift_amount = imm & 0x1F;
-  i32 result = to_be_shifted >> shift_amount;
-  cpu->registers[rd] &= ~(0xFFFFFFFF);
-  cpu->registers[rd] |= result & 0xFFFFFFFF;
+  i64 result = to_be_shifted >> shift_amount;
+  cpu->registers[rd] = (i64)result;
 }
 
-void inst_slliw(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void inst_slliw(struct CPU *cpu, struct Memory *mem, u32 inst) {
   (void)mem;
   I_TYPE_DEF
-  i32 to_shift = cpu->registers[rs1];
+  u32 to_shift = cpu->registers[rs1];
   u8 shift_amount = imm & 0x1F;
-  i32 result = to_shift << shift_amount;
-  cpu->registers[rd] &= ~(0xFFFFFFFF);
-  cpu->registers[rd] |= result & 0xFFFFFFFF;
+  u32 result = to_shift << shift_amount;
+  cpu->registers[rd] = result;
 #ifdef DEBUG
   printf("%lx: slli x%d,x%d,%d\n", cpu->pc, rd, rs1, shift_amount);
 #endif
 }
 
-void opcode_h1B(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void opcode_h1B(struct CPU *cpu, struct Memory *mem, u32 inst) {
   u8 funct3 = (inst >> 12) & 0x7;
   u8 funct7 = (inst >> 25) & 0x3F; // Only used for certain funct3
   switch (funct3) {
@@ -717,7 +719,7 @@ void opcode_h1B(struct CPU *cpu, struct Memory *mem, u32 inst) {
   }
 }
 
-void opcode_h33(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void opcode_h33(struct CPU *cpu, struct Memory *mem, u32 inst) {
   u8 funct3 = (inst >> 12) & 0x7;
   u8 funct7 = (inst >> 25) & 0x3F; // Only used for certain funct3
   switch (funct3) {
@@ -744,7 +746,7 @@ void opcode_h33(struct CPU *cpu, struct Memory *mem, u32 inst) {
     break;
   case FUNCT3_AND:
     if (0 == funct7) {
-      inst_sltu(cpu, mem, inst);
+      inst_and(cpu, mem, inst);
     } else {
       assert(0);
     }
@@ -764,7 +766,7 @@ void opcode_h33(struct CPU *cpu, struct Memory *mem, u32 inst) {
   }
 }
 
-void perform_instruction(struct CPU *cpu, struct Memory *mem, u32 inst) {
+static void perform_instruction(struct CPU *cpu, struct Memory *mem, u32 inst) {
   cpu->did_branch = false;
   u8 opcode = inst & 0x7F;
   switch (opcode) {
@@ -806,7 +808,7 @@ void perform_instruction(struct CPU *cpu, struct Memory *mem, u32 inst) {
   }
 }
 
-void cpu_loop(struct CPU *cpu, struct Memory *mem) {
+static void cpu_loop(struct CPU *cpu, struct Memory *mem) {
   for (;;) {
     u32 inst;
     memory_read(mem, cpu->pc, &inst, sizeof(u32));
@@ -840,8 +842,8 @@ int main(void) {
   struct CPU cpu;
   struct Memory mem;
   cpu.pc = 0;
-  mem.ram = malloc(40960);
-  mem.size = 40960;
+  mem.ram = malloc(409600);
+  mem.size = 409600;
   for (int i = 0; i < 32; i++) {
     cpu.registers[i] = 0;
   }

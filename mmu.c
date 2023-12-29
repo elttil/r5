@@ -42,6 +42,7 @@ write_fail:
 #ifdef DEBUG
   assert(0);
 #else
+  assert(0);
   return;
 #endif
 }
@@ -62,6 +63,7 @@ read_fail:
 #ifdef DEBUG
   assert(0);
 #else
+  assert(0);
   return;
 #endif
 }
